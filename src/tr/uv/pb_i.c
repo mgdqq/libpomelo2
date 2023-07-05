@@ -38,6 +38,10 @@ int pb_get_type(const char *type) {
 }
 
 int pb_get_constant_type(const char *type) {
+    if (!type) {
+        return 2;
+    }
+
     if (strcmp(type, "uInt32") == 0 || strcmp(type, "sInt32") == 0
             || strcmp(type, "int32") == 0) {
         return 0;

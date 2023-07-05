@@ -63,6 +63,9 @@ typedef struct pc_JSON_Hooks {
       void (*free_fn)(void *ptr);
 } pc_JSON_Hooks;
 
+extern void* (*pc_JSON_malloc)(size_t sz);
+extern void (*pc_JSON_free)(void* ptr);
+
 /* Supply malloc, realloc and free functions to pc_JSON */
 extern void pc_JSON_InitHooks(pc_JSON_Hooks* hooks);
 
@@ -129,6 +132,8 @@ The item->next and ->prev pointers are always zero on return from Duplicate. */
 extern pc_JSON *pc_JSON_ParseWithOpts(const char *value,const char **return_parse_end,int require_null_terminated);
 
 extern void pc_JSON_Minify(char *json);
+
+extern const char* parse_value(pc_JSON* item, const char* value);
 
 /* Macros for creating things quickly. */
 #define pc_JSON_AddNullToObject(object,name)        pc_JSON_AddItemToObject(object, name, pc_JSON_CreateNull())

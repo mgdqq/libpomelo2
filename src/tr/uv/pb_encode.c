@@ -157,6 +157,99 @@ static int  pb_encode_array(pb_ostream_t *stream, const pc_JSON *gprotos, const 
     return 1;
 }
 
+static int  pb_encode_map_array(pb_ostream_t* stream, const pc_JSON* gprotos, const pc_JSON* protos,
+    const pc_JSON* proto, pc_JSON* array) {
+    size_t len = pc_JSON_GetArraySize(array);
+    size_t i;
+
+    if (!pb_encode_varint(stream, len)) {
+        return 0;
+    }
+
+    for (i = 0; i < len; i++) {
+            if (!pb_encode_proto(stream, gprotos, protos, proto,
+                pc_JSON_GetArrayItem(array, i))) {
+                return 0;
+            }
+    }
+
+    return 1;
+}
+
+static int  pb_encode_map(pb_ostream_t* stream, const pc_JSON* gprotos, const pc_JSON* protos,
+    const pc_JSON* proto, pc_JSON* array) {
+    pc_JSON* type = pc_JSON_GetObjectItem(proto, "type");
+    const char* type_text = type->valuestring;
+    size_t len = pc_JSON_GetArraySize(array);
+    size_t i;
+
+    if (!pb_encode_varint(stream, len)) {
+        return 0;
+    }
+
+    pc_JSON *key_type = pc_JSON_GetObjectItem(proto, "keyType");
+    const char *key_type_text = key_type->valuestring;
+
+    pc_JSON* key_proto = pc_JSON_CreateObject();
+    pc_JSON_AddItemToObject(key_proto, "type", pc_JSON_CreateString(key_type_text));
+
+    for (i = 0; i < len; i++) {
+        pc_JSON* cur = pc_JSON_GetArrayItem(array, i);
+
+        const char* key_name = cur->string;
+            
+        pc_JSON* key_json = NULL;
+        int pb_type = pb_get_type(key_type_text);
+        if (pb_type && pb_type != PB_string) {
+            key_json = pc_JSON_CreateObject();
+            parse_value(key_json, key_name);
+        }
+        else {
+            key_json = pc_JSON_CreateString(key_name);
+        }
+
+        if (!pb_encode_proto(stream, gprotos, protos, key_proto, key_json)) {
+            pc_JSON_Delete(key_json);
+            pc_JSON_Delete(key_proto);
+            return 0;
+        }
+
+        if (type->type == pc_JSON_Object) {
+            pc_JSON* sub_proto = type;
+
+            pc_JSON* option_item = pc_JSON_GetObjectItem(sub_proto, "option");
+            const char* option_text = option_item->valuestring;
+            if (strcmp(option_text, "repeated") == 0) {
+                if (!pb_encode_map_array(stream, gprotos, protos, sub_proto, cur)) {
+                    pc_JSON_Delete(key_json);
+                    pc_JSON_Delete(key_proto);
+                    return 0;
+                }
+            } 
+            else if (strcmp(option_text, "map") == 0) {
+                if (!pb_encode_map(stream, gprotos, protos, sub_proto, cur)) {
+                    pc_JSON_Delete(key_json);
+                    pc_JSON_Delete(key_proto);
+                    return 0;
+                }
+            }
+        }
+        else {
+            if (!pb_encode_proto(stream, gprotos, protos, proto,
+                pc_JSON_GetArrayItem(array, i))) {
+                pc_JSON_Delete(key_json);
+                return 0;
+            }
+        }
+
+        pc_JSON_Delete(key_json);
+    }
+
+    pc_JSON_Delete(key_proto);
+
+    return 1;
+}
+
 static int  pb_encode(pb_ostream_t *stream, const pc_JSON *gprotos,
         const pc_JSON *protos, pc_JSON *msg) {
     pc_JSON *root = msg, *value, *option, *proto;
@@ -184,6 +277,13 @@ static int  pb_encode(pb_ostream_t *stream, const pc_JSON *gprotos,
                     if (!pb_encode_array(stream, gprotos, protos, proto, value)) {
                         return 0;
                     }
+                }
+            } else if (strcmp(option_text, "map") == 0) {
+                if (!pb_encode_tag_for_field(stream, proto)) {
+                    return 0;
+                }
+                if (!pb_encode_map(stream, gprotos, protos, proto, value)) {
+                    return 0;
                 }
             }
         } else {

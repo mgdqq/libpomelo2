@@ -332,6 +332,150 @@ static int  pb_decode_array(pb_istream_t *stream, const pc_JSON *gprotos, const 
     return 1;
 }
 
+static int  pb_decode_map_array(pb_istream_t* stream, const pc_JSON* gprotos, const pc_JSON* proto, const pc_JSON* protos,
+    const char* key, pc_JSON* result) {
+    pc_JSON* type, * value;
+    const char* type_text;
+    uint32_t size;
+    uint32_t i;
+
+    type = pc_JSON_GetObjectItem(proto, "type");
+    type_text = type->valuestring;
+    if (!result) {
+        return 0;
+    }
+
+    if (!pb_decode_varint32(stream, &size)) {
+        return 0;
+    }
+
+    for (i = 0; i < size; i++) {
+        if (pb_get_type(type_text)) {
+            if (!pb_decode_proto(stream, gprotos, proto, protos, key, result)) {
+                return 0;
+            }
+        }
+        else {
+            value = pc_JSON_CreateObject();
+            if (!pb_decode_proto(stream, gprotos, proto, protos, NULL, value)) {
+                pc_JSON_Delete(value);
+                return 0;
+            }
+            pc_JSON_AddItemToArray(result, value);
+        }
+    }
+
+    return 1;
+}
+
+static int  pb_decode_map(pb_istream_t* stream, const pc_JSON* gprotos, const pc_JSON* proto, const pc_JSON* protos,
+    const char* key, pc_JSON* result) {
+    pc_JSON* type, * array, * value;
+    const char* type_text;
+    uint32_t size;
+    uint32_t i;
+    int need_free = 0;
+
+    pc_JSON* key_type;
+    const char* key_type_text;
+
+    key_type = pc_JSON_GetObjectItem(proto, "keyType");
+    key_type_text = key_type->valuestring;
+
+    type = pc_JSON_GetObjectItem(proto, "type");
+    type_text = type->valuestring;
+    if (!result) {
+        return 0;
+    }
+   
+    if (!key) {
+        array = result;
+    }
+    else {
+        array = pc_JSON_GetObjectItem(result, key);
+        if (!array) {
+            array = pc_JSON_CreateObject();
+            need_free = 1;
+        }
+    }
+
+    if (!pb_decode_varint32(stream, &size)) {
+        if (need_free)
+            pc_JSON_Delete(array);
+        return 0;
+    }
+
+    pc_JSON* key_proto = pc_JSON_CreateObject();
+    pc_JSON_AddItemToObject(key_proto, "type", pc_JSON_CreateString(key_type_text));
+
+    int has_error = 0;
+    pc_JSON* key_json = NULL, * sub_map_or_array = NULL;
+    char* key_name = NULL;
+    for (i = 0; i < size; i++) {
+        key_json = pc_JSON_CreateObject();
+        if (!pb_decode_proto(stream, gprotos, key_proto, protos, "key", key_json)) {
+            has_error = 1;
+            break;
+        }
+
+        pc_JSON *key_item = pc_JSON_GetObjectItem(key_json, "key");
+        char* key_name = pc_JSON_Print(key_item);
+
+        if (type->type == pc_JSON_Object) {
+            pc_JSON* sub_proto = type;
+
+            pc_JSON *option_item = pc_JSON_GetObjectItem(sub_proto, "option");
+            const char* option_text = option_item->valuestring;
+
+            if (strcmp(option_text, "repeated") == 0) {
+                sub_map_or_array = pc_JSON_CreateArray();
+                if (!pb_decode_map_array(stream, gprotos, sub_proto, protos, NULL, sub_map_or_array)) {
+                    has_error = 1;
+                    break;
+                }
+                pc_JSON_AddItemToObject(array, key_name, sub_map_or_array);
+                sub_map_or_array = NULL;
+            }
+            else if (strcmp(option_text, "map") == 0) {
+               sub_map_or_array = pc_JSON_CreateObject();
+                if (!pb_decode_map(stream, gprotos, sub_proto, protos, NULL, sub_map_or_array)) {
+                    has_error = 1;
+                    break;
+                }
+                pc_JSON_AddItemToObject(array, key_name, sub_map_or_array);
+                sub_map_or_array = NULL;
+            }
+        }
+        else {
+            if (!pb_decode_proto(stream, gprotos, proto, protos, key_name, array)) {
+                has_error = 1;
+                break;
+            }
+        }
+        
+        pc_JSON_free(key_name);
+        key_name = NULL;
+        pc_JSON_Delete(key_json);
+        key_json = NULL;
+    }
+
+    if (has_error) {
+        pc_JSON_free(key_name);
+        pc_JSON_Delete(sub_map_or_array);
+        pc_JSON_Delete(key_proto);
+        pc_JSON_Delete(key_json);
+        if (need_free)
+            pc_JSON_Delete(array);
+
+        return 0;
+    }
+
+    pc_JSON_Delete(key_proto);
+    if (need_free)
+        pc_JSON_AddItemToObject(result, key, array);
+
+    return 1;
+}
 /*********************
  * Decode all fields *
  *********************/
@@ -374,6 +518,9 @@ static int  pb_decode(pb_istream_t *stream, const pc_JSON *gprotos,
                 return 0;
         } else if (strcmp(option_text, "repeated") == 0) {
             if (!pb_decode_array(stream, gprotos, proto, protos, name, result))
+                return 0;
+        } else if (strcmp(option_text, "map") == 0) {
+            if (!pb_decode_map(stream, gprotos, proto, protos, name, result))
                 return 0;
         }
     }

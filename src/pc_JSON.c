@@ -41,8 +41,8 @@ static const char *ep;
 
 const char *pc_JSON_GetErrorPtr(void) {return ep;}
 
-static void *(*pc_JSON_malloc)(size_t sz) = malloc;
-static void (*pc_JSON_free)(void *ptr) = free;
+void *(*pc_JSON_malloc)(size_t sz) = malloc;
+void (*pc_JSON_free)(void *ptr) = free;
 
 static char* pc_JSON_strdup(const char* str)
 {
@@ -248,7 +248,7 @@ static char *print_string_ptr(const char *str)
 static char *print_string(const pc_JSON *item)    {return print_string_ptr(item->valuestring);}
 
 /* Predeclare these prototypes. */
-static const char *parse_value(pc_JSON *item,const char *value);
+const char *parse_value(pc_JSON *item,const char *value);
 static char *print_value(const pc_JSON *item,int depth,int fmt);
 static const char *parse_array(pc_JSON *item,const char *value);
 static char *print_array(const pc_JSON *item,int depth,int fmt);
@@ -282,7 +282,7 @@ char *pc_JSON_Print(const pc_JSON *item)                {return print_value(item
 char *pc_JSON_PrintUnformatted(const pc_JSON *item)    {return print_value(item,0,0);}
 
 /* Parser core - when encountering text, process appropriately. */
-static const char *parse_value(pc_JSON *item,const char *value)
+const char *parse_value(pc_JSON *item,const char *value)
 {
     if (!value)                        return 0;    /* Fail on null. */
     if (!strncmp(value,"null",4))    { item->type=pc_JSON_NULL;  return value+4; }
